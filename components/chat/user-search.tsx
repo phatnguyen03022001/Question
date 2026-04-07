@@ -1,6 +1,9 @@
 "use client";
+
 import { useState } from "react";
-import { Search, UserPlus } from "lucide-react";
+import { Search, UserPlus, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface UserSearchProps {
   onStartChat: (roomId: string, targetUser: any) => void;
@@ -18,11 +21,9 @@ export function UserSearch({ onStartChat, currentUserId }: UserSearchProps) {
     try {
       const res = await fetch(`/api/users/search?q=${keyword}`);
       const data = await res.json();
-      // Lọc bỏ chính user đang đăng nhập
       const filtered = data.filter((u: any) => u._id !== currentUserId);
       setResults(filtered);
-    } catch (error) {
-      console.error("Search error:", error);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -39,35 +40,54 @@ export function UserSearch({ onStartChat, currentUserId }: UserSearchProps) {
   };
 
   return (
-    <div className="p-2 border-b">
+    <div className="p-3 border-b border-border">
       <div className="flex gap-2">
-        <input
+        {/* Sử dụng component Input từ shadcn/ui, tự động map với --input và --ring */}
+        <Input
           type="text"
           placeholder="Tìm theo tên hoặc ID..."
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          className="flex-1 px-2 py-1 text-sm border rounded"
+          onKeyDown={(e) => e.key === "Enter" && search()}
+          className="h-9 text-sm"
         />
-        <button onClick={search} className="p-1 bg-blue-500 text-white rounded">
-          <Search className="w-4 h-4" />
-        </button>
+        <Button size="icon" variant="default" onClick={search} disabled={loading} className="h-9 w-9 shrink-0">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        </Button>
       </div>
-      {loading && <p className="text-xs text-gray-400 mt-1">Đang tìm...</p>}
-      {results.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {results.map((u: any) => (
-            <div key={u._id} className="flex justify-between items-center text-sm">
-              <span>{u.username}</span>
-              <button onClick={() => startChat(u)} className="text-blue-500">
-                <UserPlus className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {!loading && keyword && results.length === 0 && (
-        <p className="text-xs text-gray-400 mt-1">Không tìm thấy người dùng</p>
-      )}
+
+      {/* Kết quả tìm kiếm */}
+      <div className="mt-3 space-y-2">
+        {loading && <p className="text-xs text-muted-foreground animate-pulse">Đang tìm kiếm...</p>}
+
+        {results.length > 0 && (
+          <div className="space-y-1">
+            {results.map((u: any) => (
+              <div
+                key={u._id}
+                className="flex justify-between items-center p-2 rounded-md hover:bg-accent transition-colors group">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">{u.username}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    ID: {u._id.slice(-6)}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => startChat(u)}
+                  className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10">
+                  <UserPlus className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && keyword && results.length === 0 && (
+          <p className="text-xs text-muted-foreground py-2 text-center">Không tìm thấy người dùng</p>
+        )}
+      </div>
     </div>
   );
 }

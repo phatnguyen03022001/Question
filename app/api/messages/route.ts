@@ -85,12 +85,13 @@ export async function POST(req: NextRequest) {
 
   const msgObj = msg.toObject();
 
+  // 1. Gửi tin nhắn đến kênh chat hiện tại
   await pusherServer.trigger(`chat-${finalRoomId}`, "new-message", {
     ...msgObj,
     username: user.isAdmin ? user.username : "someone",
   });
 
-  // Lấy danh sách participant (các userId hợp lệ)
+  // 2. Xác định các bên liên quan để cập nhật danh sách phòng
   const participants = finalRoomId
     .split("-")
     .filter(
@@ -98,7 +99,23 @@ export async function POST(req: NextRequest) {
         id !== "room" && mongoose.Types.ObjectId.isValid(id),
     );
 
-  await Promise.all(participants.map((pid: any) => pusherServer.trigger(`user-${pid}`, "rooms-updated", {})));
+  // Gửi cho người dùng (người nhận/người gửi)
+  const userUpdates = participants.map(async (pid: any) => {
+    await pusherServer.trigger(`user-${pid}`, "rooms-updated", {
+      roomId: finalRoomId,
+      lastMessage: msgObj,
+      otherUser: { _id: user._id, username: user.username },
+    });
+  });
+
+  // 3. QUAN TRỌNG: Gửi cho Admin (Kênh global)
+  const adminUpdate = pusherServer.trigger(`admin-global`, "rooms-updated", {
+    roomId: finalRoomId,
+    lastMessage: msgObj,
+    participants: participants, // Giúp admin biết phòng này gồm những ai
+  });
+
+  await Promise.all([...userUpdates, adminUpdate]);
 
   return NextResponse.json(msg, { status: 201 });
 }

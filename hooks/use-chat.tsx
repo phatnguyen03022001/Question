@@ -41,8 +41,7 @@ export function useChat(currentUser: any, roomId: string) {
         }
         setHasMore(data.hasMore ?? false);
         setNextCursor(data.nextCursor ?? null);
-      } catch (error) {
-        console.error("Load messages error:", error);
+      } catch {
         if (!isLoadMore) setMessages([]);
       } finally {
         setter(false);

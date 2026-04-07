@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Paperclip, X, Loader2, Eye } from "lucide-react";
 import Image from "next/image";
-import { compressImage } from "@/lib/utils";
+import { compressImage, cn } from "@/lib/utils";
 
 const uploadImageDirect = async (file: File): Promise<string> => {
   const formData = new FormData();
@@ -17,7 +17,6 @@ const uploadImageDirect = async (file: File): Promise<string> => {
   );
   if (!res.ok) {
     const error = await res.json();
-    console.error("Cloudinary upload error:", error);
     throw new Error(error.error?.message || "Upload ảnh thất bại");
   }
   const data = await res.json();
@@ -25,6 +24,7 @@ const uploadImageDirect = async (file: File): Promise<string> => {
 };
 
 export default function ChatInput({ roomId }: { roomId: string }) {
+  const MAX_MESSAGE_LENGTH = 160;
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -57,6 +57,11 @@ export default function ChatInput({ roomId }: { roomId: string }) {
     e.preventDefault();
     if ((!text.trim() && !file) || uploading) return;
 
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      alert("Tin nhắn tối đa 2000 ký tự");
+      return;
+    }
+
     setUploading(true);
     try {
       let imageUrl = null;
@@ -83,7 +88,6 @@ export default function ChatInput({ roomId }: { roomId: string }) {
         alert(error.error || "Gửi tin nhắn thất bại");
       }
     } catch (error: any) {
-      console.error("Lỗi gửi tin nhắn:", error);
       alert(error.message || "Gửi tin nhắn thất bại");
     } finally {
       setUploading(false);
@@ -91,20 +95,21 @@ export default function ChatInput({ roomId }: { roomId: string }) {
   };
 
   return (
-    <div className="flex flex-col border-t bg-white w-full">
+    <div className="flex flex-col border-t border-border bg-background w-full">
+      {/* Phần xem trước ảnh đính kèm */}
       {preview && (
-        <div className="p-2 px-4 flex gap-2 bg-slate-50 border-b">
-          <div className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-blue-500 shadow-sm">
+        <div className="p-3 px-4 flex gap-3 bg-muted/50 border-b border-border items-center animate-in fade-in slide-in-from-bottom-2">
+          <div className="relative w-14 h-14 rounded-md overflow-hidden border border-primary/20 shadow-sm ring-2 ring-primary/10">
             <Image src={preview} alt="preview" fill className="object-cover" />
             <button
               onClick={removeFile}
-              className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg hover:bg-red-600 transition-colors">
-              <X className="w-3 h-3" />
+              className="absolute top-0 right-0 bg-destructive text-destructive-foreground p-0.5 rounded-bl-md hover:opacity-90 transition-opacity">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="flex flex-col justify-center">
-            <p className="text-[10px] font-bold text-slate-400 uppercase">Đang đính kèm</p>
-            <p className="text-xs text-slate-600 truncate max-w-[150px]">{file?.name}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Đang đính kèm</p>
+            <p className="text-xs text-foreground truncate font-medium">{file?.name}</p>
           </div>
         </div>
       )}
@@ -112,55 +117,68 @@ export default function ChatInput({ roomId }: { roomId: string }) {
       <form onSubmit={send} className="flex flex-col gap-2 p-4">
         <div className="flex gap-2 items-center">
           <input type="file" hidden ref={fileInputRef} onChange={handleFileChange} accept="image/*" />
+
           <Button
             type="button"
             variant="ghost"
             size="icon"
             disabled={uploading}
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 text-slate-400 hover:text-blue-600">
+            className="shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10">
             <Paperclip className="w-5 h-5" />
           </Button>
+
           <Input
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={file ? "Thêm chú thích cho ảnh..." : "Nhập tin nhắn..."}
-            className="flex-1 focus-visible:ring-blue-500"
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value.length <= MAX_MESSAGE_LENGTH) {
+                setText(value);
+              }
+            }}
+            maxLength={MAX_MESSAGE_LENGTH}
+            placeholder={file ? "Thêm chú thích..." : "Nhập tin nhắn..."}
+            className="flex-1 bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary h-10 shadow-none"
             disabled={uploading}
           />
+
           <Button
             type="submit"
             size="icon"
             disabled={uploading || (!text.trim() && !file)}
-            className="shrink-0 bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-100">
+            className="shrink-0 shadow-sm">
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>
 
-        {/* Tuỳ chọn chế độ ảnh (chỉ hiển thị khi có file) */}
+        {/* Tuỳ chọn chế độ ảnh (Toggle UI chuyên nghiệp hơn) */}
         {file && (
-          <div className="flex gap-4 items-center justify-end text-xs">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                value="normal"
-                checked={imageMode === "normal"}
-                onChange={() => setImageMode("normal")}
-                className="w-3 h-3"
-              />
-              <span className="text-slate-600">Gửi luôn</span>
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                value="once"
-                checked={imageMode === "once"}
-                onChange={() => setImageMode("once")}
-                className="w-3 h-3"
-              />
-              <Eye className="w-3 h-3 text-slate-500" />
-              <span className="text-slate-600">Xem một lần (5s)</span>
-            </label>
+          <div className="flex gap-4 items-center justify-start px-2 mt-1 animate-in fade-in duration-300">
+            <div className="flex items-center space-x-4 bg-muted/50 p-1.5 px-3 rounded-full border border-border">
+              <button
+                type="button"
+                onClick={() => setImageMode("normal")}
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] font-medium transition-all px-2 py-0.5 rounded-full",
+                  imageMode === "normal"
+                    ? "bg-background shadow-sm text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}>
+                Gửi thường
+              </button>
+              <button
+                type="button"
+                onClick={() => setImageMode("once")}
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] font-medium transition-all px-2 py-0.5 rounded-full",
+                  imageMode === "once"
+                    ? "bg-background shadow-sm text-warning"
+                    : "text-muted-foreground hover:text-foreground",
+                )}>
+                <Eye className="w-3 h-3" />
+                Xem 1 lần (5s)
+              </button>
+            </div>
           </div>
         )}
       </form>

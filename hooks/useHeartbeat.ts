@@ -7,9 +7,7 @@ export function useHeartbeat(intervalMs: number = 30000) {
     const sendHeartbeat = async () => {
       try {
         await fetch("/api/users/heartbeat", { method: "POST" });
-      } catch (error) {
-        console.error("Heartbeat failed:", error);
-      }
+      } catch {}
     };
 
     sendHeartbeat();

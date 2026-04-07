@@ -77,7 +77,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ rooms: result, hasMore, nextPage: page + 1 });
   } catch (error: any) {
-    console.error("Error in /api/admin/rooms:", error);
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
   }
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { Trash2, X, ImageIcon, Clock } from "lucide-react";
+import { Trash2, X, ImageIcon, Clock, Check, CheckCheck } from "lucide-react";
 import { useState, useEffect, useRef, memo } from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /* ---------------- types ---------------- */
-
 interface User {
   _id: string;
   username: string;
@@ -32,8 +33,7 @@ interface Props {
 }
 
 /* ---------------- component ---------------- */
-
-function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
+function MessageItem({ message, isMe, currentUser }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
   const [imageOpened, setImageOpened] = useState(false);
@@ -45,13 +45,8 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
   const canDelete = isMe;
   const isOnceImage = message.imageMode === "once" && !!message.imageUrl;
   const hasBeenSeen = !message.deleted && (message.seenBy?.length ?? 0) > 0;
-
-  // Người gửi hoặc admin được xem ảnh once trực tiếp (không timer)
   const canViewDirectly = isMe || currentUser.isAdmin;
-
   const alreadyViewed = !canViewDirectly && (message.onceViewedBy?.includes(currentUser._id) ?? false);
-
-  /* ---------------- cleanup ---------------- */
 
   useEffect(() => {
     return () => {
@@ -61,66 +56,41 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
   }, []);
 
   /* ---------------- handlers ---------------- */
+  const handleViewNormalImage = () => setShowFullImage(true);
 
-  // Xem ảnh bình thường (normal hoặc người gửi/admin xem once)
-  const handleViewNormalImage = () => {
-    setShowFullImage(true);
-  };
-
-  // Xem ảnh once dành cho người nhận (có timer)
   const handleViewOnceImage = async () => {
-    if (!message.imageUrl) return;
-    if (alreadyViewed || imageOpened) return;
+    if (!message.imageUrl || alreadyViewed || imageOpened) return;
 
     setImageOpened(true);
     setShowFullImage(true);
     setTimeLeft(5);
 
     intervalRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (!prev || prev <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeLeft((prev) => (prev && prev > 1 ? prev - 1 : 0));
     }, 1000);
 
     timerRef.current = setTimeout(async () => {
       setShowFullImage(false);
       setTimeLeft(null);
-
-      await fetch(`/api/messages/${message._id}/once-viewed`, {
-        method: "POST",
-      }).catch(console.error);
+      await fetch(`/api/messages/${message._id}/once-viewed`, { method: "POST" }).catch();
     }, 5000);
   };
 
   const handleCloseModal = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (intervalRef.current) clearInterval(intervalRef.current);
-
     setShowFullImage(false);
     setTimeLeft(null);
-
-    // Nếu đang xem ảnh once với tư cách người nhận và chưa kịp timeout -> gọi API
     if (!canViewDirectly && isOnceImage && imageOpened && !alreadyViewed) {
-      fetch(`/api/messages/${message._id}/once-viewed`, {
-        method: "POST",
-      }).catch(console.error);
+      fetch(`/api/messages/${message._id}/once-viewed`, { method: "POST" }).catch();
     }
   };
 
   const handleDelete = async () => {
     if (!confirm("Bạn có chắc muốn thu hồi tin nhắn này?")) return;
-
     setDeleting(true);
-
     try {
-      const res = await fetch(`/api/messages/${message._id}`, {
-        method: "DELETE",
-      });
-
+      const res = await fetch(`/api/messages/${message._id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
     } catch {
       alert("Thu hồi tin nhắn thất bại");
@@ -130,102 +100,84 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
   };
 
   /* ---------------- render content ---------------- */
-
   const renderContent = () => {
     if (message.deleted) {
       if (currentUser.isAdmin) {
         return (
-          <>
+          <div className="space-y-2 opacity-70">
             {message.text && <p className="text-sm whitespace-pre-wrap">{message.text}</p>}
             {message.imageUrl && (
-              <div className="mt-2 relative min-w-50 h-48 rounded-lg overflow-hidden border border-red-300 opacity-70">
-                <Image src={message.imageUrl} alt="Deleted image" fill className="object-cover" />
+              <div className="relative w-48 h-32 rounded-lg overflow-hidden border border-destructive/50">
+                <Image src={message.imageUrl} alt="Deleted" fill className="object-cover grayscale" />
               </div>
             )}
-            <span className="text-xs text-red-400 ml-2">(đã thu hồi)</span>
-          </>
+            <span className="text-[10px] font-medium text-destructive uppercase tracking-tighter">
+              Admin: Đã thu hồi
+            </span>
+          </div>
         );
       }
-      return <p className="text-sm italic text-gray-400">Tin nhắn đã bị thu hồi</p>;
+      return <p className="text-sm italic opacity-60">Tin nhắn đã bị thu hồi</p>;
     }
 
     return (
-      <>
-        {message.text && <p className="text-sm whitespace-pre-wrap">{message.text}</p>}
+      <div className="space-y-2">
+        {message.text && <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.text}</p>}
 
         {message.imageUrl && (
-          <>
-            {/* ===== ẢNH NORMAL ===== */}
-            {!isOnceImage && (
-              <div className="mt-2">
-                <button
-                  onClick={handleViewNormalImage}
-                  className="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg">
-                  <ImageIcon className="w-4 h-4" />
-                  <span className="text-xs font-medium">Xem ảnh</span>
-                </button>
-              </div>
-            )}
-
-            {/* ===== ẢNH ONCE ===== */}
-            {isOnceImage && (
-              <>
-                {/* Người gửi/admin -> xem bình thường + badge "Một lần" */}
-                {canViewDirectly && (
-                  <div className="mt-2">
-                    <button
-                      onClick={handleViewNormalImage}
-                      className="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg">
-                      <ImageIcon className="w-4 h-4" />
-                      <span className="text-xs font-medium">Xem ảnh</span>
-                    </button>
-                    <div className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>Ảnh xem một lần (người nhận chỉ xem được 1 lần)</span>
-                    </div>
+          <div className="pt-1">
+            {!isOnceImage || canViewDirectly ? (
+              <div className="space-y-1">
+                <Button variant="secondary" size="sm" onClick={handleViewNormalImage} className="h-8 gap-2 text-xs">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Xem ảnh
+                </Button>
+                {isOnceImage && (
+                  <div className="text-[10px] text-warning flex items-center gap-1 px-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Chế độ xem một lần</span>
                   </div>
                 )}
-
-                {/* Người nhận -> cơ chế một lần */}
-                {!canViewDirectly && (
-                  <>
-                    {!alreadyViewed && !imageOpened && (
-                      <button
-                        onClick={handleViewOnceImage}
-                        className="mt-2 flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg">
-                        <ImageIcon className="w-4 h-4" />
-                        <span className="text-xs font-medium">Xem ảnh (một lần)</span>
-                      </button>
-                    )}
-
-                    {(alreadyViewed || (imageOpened && timeLeft === 0)) && (
-                      <div className="mt-2 text-xs text-gray-400 italic">Ảnh đã hết hạn (xem một lần)</div>
-                    )}
-
-                    {imageOpened && timeLeft && timeLeft > 0 && (
-                      <div className="mt-2 text-xs text-blue-500">Đang xem ảnh (còn {timeLeft}s)</div>
-                    )}
-                  </>
+              </div>
+            ) : (
+              <>
+                {!alreadyViewed && !imageOpened ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleViewOnceImage}
+                    className="h-8 gap-2 text-xs border-dashed border-primary/50">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    Mở ảnh một lần
+                  </Button>
+                ) : alreadyViewed || (imageOpened && timeLeft === 0) ? (
+                  <div className="text-xs opacity-60 italic flex items-center gap-2 py-1">
+                    <Clock className="w-3.5 h-3.5" /> Ảnh đã hết hạn
+                  </div>
+                ) : (
+                  <div className="text-xs text-primary font-medium animate-pulse">Đang xem ({timeLeft}s)</div>
                 )}
               </>
             )}
-          </>
+          </div>
         )}
-      </>
+      </div>
     );
   };
 
-  /* ---------------- UI ---------------- */
-
   return (
     <>
-      <div className={`flex ${isMe ? "justify-end" : "justify-start"} mb-4 group relative`}>
+      <div className={cn("flex mb-4 group relative px-4", isMe ? "justify-end" : "justify-start")}>
+        {/* Sử dụng utility classes từ globals.css */}
         <div
-          className={`max-w-[70%] p-3 rounded-2xl ${isMe ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900"}`}>
+          className={cn(
+            "max-w-[80%] transition-all duration-200",
+            isMe ? "chat-bubble-sent shadow-sm" : "chat-bubble-received border border-border/50 shadow-sm",
+          )}>
           {renderContent()}
 
-          <div className="text-[10px] opacity-50 mt-1 flex gap-1">
-            <span>
+          <div className="text-[11px] mt-1.5 flex items-center justify-end gap-2">
+            <span className="text-foreground/70 font-medium">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -233,47 +185,57 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
             </span>
 
             {isMe && !message.deleted && (
-              <span className={hasBeenSeen ? "text-green-500" : "text-gray-400"}>{hasBeenSeen ? "✓✓" : "✓"}</span>
+              <span
+                className={cn(
+                  "transition-colors",
+                  hasBeenSeen
+                    ? "text-green-500" // đã đọc → nổi bật
+                    : "text-foreground/80", // chưa đọc → vẫn rõ
+                )}>
+                {hasBeenSeen ? <CheckCheck className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+              </span>
             )}
           </div>
         </div>
 
         {canDelete && !message.deleted && (
-          <button
+          <Button
+            variant="destructive"
+            size="icon"
             onClick={handleDelete}
             disabled={deleting}
-            className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition bg-red-500 text-white rounded-full p-1">
+            className="absolute -top-2 -right-1 h-6 w-6 rounded-full scale-0 group-hover:scale-100 transition-transform duration-200 shadow-lg">
             <Trash2 className="w-3 h-3" />
-          </button>
+          </Button>
         )}
       </div>
 
-      {/* Modal fullscreen */}
+      {/* Modal Fullscreen - Giữ nguyên logic nhưng dùng tokens */}
       {showFullImage && message.imageUrl && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={handleCloseModal}>
-          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={handleCloseModal}>
+          <div className="relative max-w-[95vw] max-h-[95vh]" onClick={(e) => e.stopPropagation()}>
             <Image
               src={message.imageUrl}
-              alt="Fullscreen"
-              width={1200}
-              height={1200}
-              className="max-w-full max-h-full object-contain"
+              alt="Full"
+              width={1600}
+              height={1600}
+              className="max-w-full max-h-full object-contain rounded-lg"
               unoptimized={true}
             />
-
-            {/* Chỉ hiển thị timer nếu là ảnh once và người nhận đang xem */}
-            {!canViewDirectly && isOnceImage && timeLeft && timeLeft > 0 && (
-              <div className="absolute top-4 left-4 bg-black/60 text-white px-2 py-1 rounded-md text-sm flex gap-1">
-                <Clock className="w-3 h-3" />
-                {timeLeft}s
+            {!canViewDirectly && isOnceImage && timeLeft && (
+              <div className="absolute top-4 left-4 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 shadow-xl">
+                <Clock className="w-3.5 h-3.5" /> {timeLeft} giây còn lại
               </div>
             )}
-
-            <button
+            <Button
+              variant="outline"
+              size="icon"
               onClick={handleCloseModal}
-              className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2">
-              <X className="w-6 h-6" />
-            </button>
+              className="absolute top-4 right-4 rounded-full bg-background/50 hover:bg-background">
+              <X className="w-5 h-5" />
+            </Button>
           </div>
         </div>
       )}
@@ -281,15 +243,4 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
   );
 }
 
-export default memo(MessageItem, (prevProps, nextProps) => {
-  return (
-    prevProps.message._id === nextProps.message._id &&
-    prevProps.message.deleted === nextProps.message.deleted &&
-    prevProps.message.seenBy?.length === nextProps.message.seenBy?.length &&
-    prevProps.message.onceViewedBy?.length === nextProps.message.onceViewedBy?.length &&
-    prevProps.message.text === nextProps.message.text &&
-    prevProps.message.imageUrl === nextProps.message.imageUrl &&
-    prevProps.isMe === nextProps.isMe &&
-    prevProps.currentUser._id === nextProps.currentUser._id
-  );
-});
+export default memo(MessageItem);
