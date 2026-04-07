@@ -19,26 +19,63 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Lấy tất cả roomId có trong hệ thống
-    const rooms = await Message.aggregate([{ $group: { _id: "$roomId" } }, { $project: { roomId: "$_id", _id: 0 } }]);
+    // Phân trang
+    const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "20"), 50);
+    const skip = (page - 1) * limit;
 
-    const result = [];
-    for (const { roomId } of rooms) {
-      const parts = roomId.split("-");
-      const userIds = parts.filter((id: string) => {
-        if (id === "room") return false;
-        return mongoose.Types.ObjectId.isValid(id);
-      });
-      if (userIds.length === 0) continue; // bỏ qua room không có user hợp lệ
+    // Bước 1: Lấy danh sách roomId có phân trang (dùng $group + $sort + $skip/$limit)
+    const roomData = await Message.aggregate([
+      { $group: { _id: "$roomId" } },
+      { $sort: { _id: 1 } }, // sắp xếp theo roomId để nhất quán
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $project: {
+          roomId: "$_id",
+          userIds: {
+            $filter: {
+              input: { $split: ["$_id", "-"] },
+              as: "part",
+              cond: { $and: [{ $ne: ["$$part", "room"] }, { $ne: ["$$part", ""] }] },
+            },
+          },
+        },
+      },
+    ]);
 
-      const users = await User.find({ _id: { $in: userIds } }).select("username");
-      result.push({
-        roomId,
-        participants: users.map((u) => ({ _id: u._id, username: u.username })),
-      });
+    // Đếm tổng số phòng
+    const totalCountResult = await Message.aggregate([{ $group: { _id: "$roomId" } }, { $count: "total" }]);
+    const totalRooms = totalCountResult[0]?.total || 0;
+    const hasMore = skip + roomData.length < totalRooms;
+
+    if (roomData.length === 0) {
+      return NextResponse.json({ rooms: [], hasMore, nextPage: page + 1 });
     }
 
-    return NextResponse.json(result);
+    // Lấy tất cả userId hợp lệ
+    const allUserIds = roomData
+      .flatMap((room) => room.userIds)
+      .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+    const uniqueUserIds = [...new Set(allUserIds)];
+
+    const usersMap = new Map();
+    if (uniqueUserIds.length > 0) {
+      const users = await User.find({ _id: { $in: uniqueUserIds } }).select("username");
+      users.forEach((user) => usersMap.set(user._id.toString(), { _id: user._id, username: user.username }));
+    }
+
+    const result = roomData
+      .map((room) => ({
+        roomId: room.roomId,
+        participants: room.userIds
+          .filter((id: string) => mongoose.Types.ObjectId.isValid(id))
+          .map((id: string) => usersMap.get(id))
+          .filter(Boolean),
+      }))
+      .filter((room) => room.participants.length > 0);
+
+    return NextResponse.json({ rooms: result, hasMore, nextPage: page + 1 });
   } catch (error: any) {
     console.error("Error in /api/admin/rooms:", error);
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });

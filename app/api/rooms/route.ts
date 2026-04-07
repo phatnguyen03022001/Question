@@ -11,13 +11,29 @@ export async function GET(req: NextRequest) {
   const userId = cookieStore.get("auth_session")?.value;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Lấy tất cả roomId có chứa userId (dùng regex)
+  // Phân trang
+  const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
+  const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "20"), 50);
+  const skip = (page - 1) * limit;
+
+  // Lấy tất cả roomId có chứa userId (dùng regex) + phân trang
   const rooms = await Message.aggregate([
     { $match: { roomId: { $regex: userId } } },
     { $group: { _id: "$roomId", lastMessageAt: { $max: "$createdAt" } } },
-    { $sort: { lastMessageAt: -1 } }, // sắp xếp theo tin nhắn mới nhất
+    { $sort: { lastMessageAt: -1 } },
+    { $skip: skip },
+    { $limit: limit },
     { $project: { roomId: "$_id", _id: 0, lastMessageAt: 1 } },
   ]);
+
+  // Đếm tổng số phòng để biết có more
+  const totalCountResult = await Message.aggregate([
+    { $match: { roomId: { $regex: userId } } },
+    { $group: { _id: "$roomId" } },
+    { $count: "total" },
+  ]);
+  const totalRooms = totalCountResult[0]?.total || 0;
+  const hasMore = skip + rooms.length < totalRooms;
 
   const result = [];
   for (const room of rooms) {
@@ -39,5 +55,5 @@ export async function GET(req: NextRequest) {
       });
     }
   }
-  return NextResponse.json(result);
+  return NextResponse.json({ rooms: result, hasMore, nextPage: page + 1 });
 }

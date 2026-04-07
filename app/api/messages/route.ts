@@ -10,18 +10,22 @@ export async function GET(req: NextRequest) {
   const roomId = req.nextUrl.searchParams.get("roomId");
   const isAdmin = req.nextUrl.searchParams.get("isAdmin") === "true";
   const cursor = req.nextUrl.searchParams.get("cursor");
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") || "10", 10);
+  const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "10", 10), 50);
 
-  if (!roomId) return NextResponse.json({ error: "Thiếu roomId" }, { status: 400 });
-
-  let query = Message.find({ roomId });
-  if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
-    query = query.where("_id").lt(new mongoose.Types.ObjectId(cursor) as any);
+  if (!roomId) {
+    return NextResponse.json({ error: "Thiếu roomId" }, { status: 400 });
   }
-  const messages = await query.sort({ createdAt: -1 }).limit(limit);
+
+  // Tạo query object, dùng $lt nếu có cursor
+  const queryFilter: any = { roomId };
+  if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+    queryFilter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+  }
+
+  const messages = await Message.find(queryFilter).sort({ createdAt: -1 }).limit(limit).lean().exec();
 
   const processed = messages.map((m) => {
-    const obj = m.toObject();
+    const obj = { ...m };
     if (obj.deleted) {
       if (isAdmin) obj.isDeleted = true;
       else {
@@ -52,15 +56,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   }
 
-  // Nhận JSON từ client (text, roomId, imageUrl, imageMode)
   const { text, roomId, imageUrl, imageMode } = await req.json();
-
   if (!text && !imageUrl) {
     return NextResponse.json({ error: "Nội dung trống" }, { status: 400 });
   }
 
-  const user = await User.findById(userIdFromCookie);
-  if (!user) return NextResponse.json({ error: "User không tồn tại" }, { status: 404 });
+  const user = await User.findById(userIdFromCookie).lean();
+  if (!user) {
+    return NextResponse.json({ error: "User không tồn tại" }, { status: 404 });
+  }
 
   const finalRoomId = roomId || `room-${user._id}`;
 
@@ -76,25 +80,25 @@ export async function POST(req: NextRequest) {
     username: user.username,
     text: text || "",
     imageUrl,
-    imageMode: imageMode || "normal",
+    imageMode: imageMode === "once" ? "once" : "normal",
   });
 
+  const msgObj = msg.toObject();
+
   await pusherServer.trigger(`chat-${finalRoomId}`, "new-message", {
-    ...msg.toObject(),
+    ...msgObj,
     username: user.isAdmin ? user.username : "someone",
   });
 
-  // Gửi sự kiện cập nhật danh sách phòng cho cả người gửi và người nhận
-  // Xác định người nhận (nếu là private room)
+  // Lấy danh sách participant (các userId hợp lệ)
   const participants = finalRoomId
     .split("-")
     .filter(
       (id: string | Uint8Array<ArrayBufferLike> | mongoose.mongo.BSON.ObjectId | mongoose.mongo.BSON.ObjectIdLike) =>
         id !== "room" && mongoose.Types.ObjectId.isValid(id),
     );
-  for (const participantId of participants) {
-    await pusherServer.trigger(`user-${participantId}`, "rooms-updated", {});
-  }
+
+  await Promise.all(participants.map((pid: any) => pusherServer.trigger(`user-${pid}`, "rooms-updated", {})));
 
   return NextResponse.json(msg, { status: 201 });
 }

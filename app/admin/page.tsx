@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthForm from "@/components/auth/auth-form";
@@ -34,13 +34,17 @@ export default function AdminPage() {
   const [admin, setAdmin] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [rooms, setRooms] = useState<any[]>([]);
+  const [roomsPage, setRoomsPage] = useState(1);
+  const [roomsHasMore, setRoomsHasMore] = useState(false);
+  const [roomsLoadingMore, setRoomsLoadingMore] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersHasMore, setUsersHasMore] = useState(false);
+  const [usersLoadingMore, setUsersLoadingMore] = useState(false);
 
   useHeartbeat();
 
-  // Kiểm tra session admin
   useEffect(() => {
     const fetchAdmin = async () => {
       try {
@@ -64,40 +68,73 @@ export default function AdminPage() {
     fetchAdmin();
   }, [router]);
 
-  const fetchRooms = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/rooms");
-      if (!res.ok) throw new Error("Failed to fetch rooms");
-      const data = await res.json();
-      setRooms(data);
-    } catch (error) {
-      console.error("Lỗi tải phòng:", error);
-    }
-  }, []);
+  const roomsLoadingMoreRef = useRef(false);
+  const usersLoadingMoreRef = useRef(false);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchRooms = useCallback(async (page: number, isLoadMore = false) => {
+    if (isLoadMore && roomsLoadingMoreRef.current) return;
+    if (!isLoadMore) setRoomsLoadingMore(true);
+    else roomsLoadingMoreRef.current = true;
     try {
-      const res = await fetch("/api/users");
-      if (!res.ok) throw new Error();
+      const res = await fetch(`/api/admin/rooms?page=${page}&limit=20`);
       const data = await res.json();
-      setUsers(data);
+      if (isLoadMore) setRooms((prev) => [...prev, ...data.rooms]);
+      else setRooms(data.rooms);
+      setRoomsHasMore(data.hasMore);
+      setRoomsPage(page);
     } catch (error) {
-      console.error("Lỗi tải người dùng:", error);
+      console.error(error);
+    } finally {
+      if (!isLoadMore) setRoomsLoadingMore(false);
+      else roomsLoadingMoreRef.current = false;
     }
-  }, []);
+  }, []); // ✅ dependency rỗng, vì ref không cần trong dep
+
+  const fetchUsers = useCallback(
+    async (page: number, isLoadMore = false) => {
+      if (isLoadMore && usersLoadingMoreRef.current) return;
+      if (!isLoadMore) setUsersLoadingMore(true);
+      else usersLoadingMoreRef.current = true;
+      try {
+        const res = await fetch(`/api/users?page=${page}&limit=20`);
+        const data = await res.json();
+        const filtered = data.users.filter((u: any) => u._id !== admin?._id);
+        if (isLoadMore) setUsers((prev) => [...prev, ...filtered]);
+        else setUsers(filtered);
+        setUsersHasMore(data.hasMore);
+        setUsersPage(page);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        if (!isLoadMore) setUsersLoadingMore(false);
+        else usersLoadingMoreRef.current = false;
+      }
+    },
+    [admin],
+  ); // ✅ admin là dependency ổn định (admin thay đổi khi login/logout)
 
   useEffect(() => {
     if (admin) {
-      fetchRooms();
-      fetchUsers();
-      const interval = setInterval(fetchUsers, 30000);
+      fetchRooms(1, false);
+      fetchUsers(1, false);
+      const interval = setInterval(() => fetchUsers(1, false), 30000);
       return () => clearInterval(interval);
     }
   }, [admin, fetchRooms, fetchUsers]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await fetch("/api/logout", { method: "POST" });
     router.push("/");
+  }, [router]);
+
+  const loadMoreRooms = () => {
+    if (!roomsHasMore || roomsLoadingMore) return;
+    fetchRooms(roomsPage + 1, true);
+  };
+
+  const loadMoreUsers = () => {
+    if (!usersHasMore || usersLoadingMore) return;
+    fetchUsers(usersPage + 1, true);
   };
 
   if (loading) {
@@ -170,12 +207,7 @@ export default function AdminPage() {
           </div>
           <ScrollArea className="h-64">
             <div className="p-2 space-y-2">
-              {loadingUsers && (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-                </div>
-              )}
-              {!loadingUsers && users.length === 0 && (
+              {users.length === 0 && (
                 <div className="py-6 text-center text-slate-300 text-xs">Chưa có người dùng nào</div>
               )}
               {users.map((user) => {
@@ -201,6 +233,18 @@ export default function AdminPage() {
                   </div>
                 );
               })}
+              {usersHasMore && (
+                <div className="text-center py-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMoreUsers}
+                    disabled={usersLoadingMore}
+                    className="text-xs">
+                    {usersLoadingMore ? "Đang tải..." : "Xem thêm người dùng"}
+                  </Button>
+                </div>
+              )}
             </div>
           </ScrollArea>
         </Card>
@@ -239,6 +283,18 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ))
+              )}
+              {roomsHasMore && (
+                <div className="text-center py-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMoreRooms}
+                    disabled={roomsLoadingMore}
+                    className="text-xs">
+                    {roomsLoadingMore ? "Đang tải..." : "Xem thêm cuộc trò chuyện"}
+                  </Button>
+                </div>
               )}
             </div>
           </ScrollArea>

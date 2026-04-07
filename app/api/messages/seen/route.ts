@@ -6,17 +6,20 @@ import { cookies } from "next/headers";
 export async function POST(req: NextRequest) {
   await connectDB();
   const cookieStore = await cookies();
-
   const userId = cookieStore.get("auth_session")?.value;
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const { roomId } = await req.json();
-  if (!roomId) return NextResponse.json({ error: "Thiếu roomId" }, { status: 400 });
+  if (!roomId) {
+    return NextResponse.json({ error: "Thiếu roomId" }, { status: 400 });
+  }
 
-  // Kiểm tra participant
+  // Kiểm tra user có phải participant không
   const ids = roomId.split("-");
   if (!ids.includes(userId)) {
-    return NextResponse.json({ error: "Forbidden: not a participant" }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Cập nhật seenBy cho tin nhắn của người khác
@@ -25,7 +28,10 @@ export async function POST(req: NextRequest) {
     { $addToSet: { seenBy: userId } },
   );
 
-  await pusherServer.trigger(`chat-${roomId}`, "messages-seen", { roomId, userId });
+  // Chỉ trigger Pusher nếu có ít nhất một tin nhắn được cập nhật
+  if (result.modifiedCount > 0) {
+    await pusherServer.trigger(`chat-${roomId}`, "messages-seen", { roomId, userId });
+  }
 
   return NextResponse.json({ modified: result.modifiedCount });
 }

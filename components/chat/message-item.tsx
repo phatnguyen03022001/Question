@@ -181,7 +181,7 @@ function MessageItem({ message, isMe, currentUser, setMessages }: Props) {
                     </button>
                     <div className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      <span>Chỉ xem 1 lần</span>
+                      <span>Ảnh xem một lần (người nhận chỉ xem được 1 lần)</span>
                     </div>
                   </div>
                 )}

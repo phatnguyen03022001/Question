@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import MessageItem from "./message-item";
 import ChatInput from "./chat-input";
 import { Loader2, ArrowUp } from "lucide-react";
@@ -18,19 +18,35 @@ export default function ChatContainer({ user, roomId, readOnly = false }: ChatCo
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const isUserAtBottomRef = useRef(true);
   const prevMessagesLengthRef = useRef(0);
-  const hasCalledSeenRef = useRef<string | null>(null);
-  const lastMessageIdRef = useRef<string | null>(null);
 
-  const checkIfAtBottom = () => {
+  const seenCalledForRoomRef = useRef<string | null>(null);
+  const lastSeenMessageIdRef = useRef<string | null>(null);
+
+  const checkIfAtBottom = useCallback(() => {
     if (!scrollViewportRef.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = scrollViewportRef.current;
     return scrollHeight - scrollTop - clientHeight < 50;
-  };
+  }, []);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     if (!scrollViewportRef.current) return;
     scrollViewportRef.current.scrollTop = scrollViewportRef.current.scrollHeight;
-  };
+  }, []);
+
+  // ✅ Sửa: dependencies chính xác - dùng [user, roomId, readOnly]
+  const callSeenApi = useCallback(() => {
+    if (readOnly) return;
+    if (!user?._id || !roomId) return;
+    const ids = roomId.split("-");
+    if (!ids.includes(user._id)) return;
+
+    fetch("/api/messages/seen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomId }),
+      credentials: "include",
+    }).catch(console.error);
+  }, [user, roomId, readOnly]); // ✅ user thay vì user?._id
 
   useEffect(() => {
     const viewport = scrollViewportRef.current;
@@ -40,7 +56,7 @@ export default function ChatContainer({ user, roomId, readOnly = false }: ChatCo
     };
     viewport.addEventListener("scroll", handleScroll);
     return () => viewport.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [checkIfAtBottom]);
 
   useEffect(() => {
     if (loading) return;
@@ -50,52 +66,36 @@ export default function ChatContainer({ user, roomId, readOnly = false }: ChatCo
       scrollToBottom();
     }
     prevMessagesLengthRef.current = messages.length;
-  }, [messages, loading]);
+  }, [messages, loading, scrollToBottom]);
 
-  // Gọi seen lần đầu khi mở phòng (chỉ khi user hợp lệ)
   useEffect(() => {
-    if (!roomId || readOnly) return;
-    if (!user || !user._id) return; // thêm kiểm tra
-    const ids = roomId.split("-");
-    const isParticipant = ids.includes(user._id);
-    if (!isParticipant) return;
-    if (hasCalledSeenRef.current === roomId) return;
-    hasCalledSeenRef.current = roomId;
+    if (readOnly) return;
+    if (!roomId || !user?._id) return;
+    if (seenCalledForRoomRef.current === roomId) return;
+    seenCalledForRoomRef.current = roomId;
+    callSeenApi();
+  }, [roomId, user, readOnly, callSeenApi]); // ✅ thêm user vào dep
 
-    fetch("/api/messages/seen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roomId }),
-      credentials: "include",
-    }).catch(console.error);
-  }, [roomId, user?._id, readOnly]); // dùng optional chaining
-
-  // Gọi seen khi có tin nhắn mới từ người khác
   useEffect(() => {
-    if (!roomId || readOnly) return;
-    if (!user || !user._id) return; // thêm kiểm tra
-    const ids = roomId.split("-");
-    const isParticipant = ids.includes(user._id);
-    if (!isParticipant) return;
+    if (readOnly) return;
+    if (!roomId || !user?._id) return;
+    if (messages.length === 0) return;
 
     const lastMsg = messages[messages.length - 1];
-    if (lastMsg && String(lastMsg.userId) !== String(user?._id) && lastMsg._id !== lastMessageIdRef.current) {
-      lastMessageIdRef.current = lastMsg._id;
-      fetch("/api/messages/seen", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId }),
-        credentials: "include",
-      }).catch(console.error);
+    if (!lastMsg) return;
+    if (String(lastMsg.userId) !== String(user._id)) {
+      if (lastSeenMessageIdRef.current !== lastMsg._id) {
+        lastSeenMessageIdRef.current = lastMsg._id;
+        callSeenApi();
+      }
     }
-  }, [messages, roomId, user?._id, readOnly]);
+  }, [messages, roomId, user, readOnly, callSeenApi]); // ✅ thêm user
 
   const handleLoadMore = () => {
     if (!hasMore || loadingMore) return;
     loadMoreOlder();
   };
 
-  // Nếu user không hợp lệ, hiển thị div trống (giữ layout)
   if (!user || !user._id) {
     return <div className="flex-1 bg-white" />;
   }

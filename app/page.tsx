@@ -1,7 +1,7 @@
 "use client";
 
 import { useHeartbeat } from "@/hooks/useHeartbeat";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ChatContainer from "@/components/chat/chat-container";
 import AuthForm from "@/components/auth/auth-form";
@@ -44,23 +44,23 @@ export default function HomePage() {
     fetchUser();
   }, [router]);
 
-  const logout = async () => {
-    await fetch("/api/logout", { method: "POST" });
-    setUser(null);
-    router.refresh();
-  };
-
-  const handleSelectRoom = (roomId: string, otherUser: any) => {
+  const handleSelectRoom = useCallback((roomId: string, otherUser: any) => {
     setSelectedRoomId(roomId);
     setSelectedOtherUser(otherUser);
     setShowSearch(false);
-  };
+  }, []);
 
-  const handleStartChat = (roomId: string, targetUser: any) => {
+  const handleStartChat = useCallback((roomId: string, targetUser: any) => {
     setSelectedRoomId(roomId);
     setSelectedOtherUser(targetUser);
     setShowSearch(false);
-  };
+  }, []);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/logout", { method: "POST" });
+    setUser(null);
+    router.refresh();
+  }, [router]);
 
   if (loading) {
     return (
@@ -78,7 +78,7 @@ export default function HomePage() {
           <div className="p-4 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
             <MessageCircle className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-900">Spackie Chat</h1>
+          <h1 className="text-4xl font-black tracking-tight text-slate-900">Something</h1>
           <p className="text-slate-500 max-w-70">Nhắn tin riêng tư với bạn bè và đội ngũ hỗ trợ.</p>
         </div>
         <div className="w-full max-w-md">
