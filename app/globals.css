@@ -68,6 +68,7 @@
   html, body {
     height: 100dvh;
     overscroll-behavior: none;
+    touch-action: pan-x pan-y;
   }
   input, button, select, textarea {
     @apply text-[16px] md:text-sm; /* Chống auto-zoom trên iOS */
